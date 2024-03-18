@@ -45,6 +45,12 @@ func InitTool() Tool {
 }
 
 func (tool Tool) InitRepository() {
+	log.Println(tool.Conf.Repository.URL)
+	if tool.Conf.Repository.URL == "" {
+		log.Println("No repository specified. Skipping repository initialization.")
+		return
+	}
+
 	log.Println("Cloning git repository", tool.Conf.Repository.URL)
 
 	gitCommand := exec.Command("git", "clone", tool.Conf.Repository.URL)
