@@ -14,14 +14,16 @@ type Stage struct {
 	Command string `yaml:"command"`
 }
 
+type Repository struct {
+	URL string `yaml:"url"`
+}
+
 type Tool struct {
 	Conf struct {
-		Repository struct {
-			URL string `yaml:"url"`
-		} `yaml:"repository"`
+		Repository Repository `yaml:"repository"`
 	} `yaml:"conf"`
 	Variables map[string]string `yaml:"variables"`
-	Stages    map[string]Stage  `yaml:"stages"`
+	Stages    yaml.MapSlice     `yaml:"stages"`
 }
 
 func InitTool() Tool {
@@ -45,7 +47,6 @@ func InitTool() Tool {
 }
 
 func (tool Tool) InitRepository() {
-	log.Println(tool.Conf.Repository.URL)
 	if tool.Conf.Repository.URL == "" {
 		log.Println("No repository specified. Skipping repository initialization.")
 		return
@@ -61,4 +62,18 @@ func (tool Tool) InitRepository() {
 		panic(stderr.String())
 	}
 	log.Println("Cloned git repository")
+
+}
+
+func (tool Tool) LoadVariablesIntoEnv(env []string) {
+	for k, v := range tool.Variables {
+		env = append(env, k+"="+v)
+	}
+}
+
+func (tool Tool) ExecStages(env []string) {
+	for _, stage := range tool.Stages {
+		log.Print("Executing stage: " + stage.Key.(string))
+
+	}
 }
