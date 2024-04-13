@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"gopkg.in/yaml.v2"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -26,6 +27,7 @@ type Tool struct {
 	Variables  map[string]string `yaml:"variables"`
 	Stages     yaml.MapSlice     `yaml:"stages"`
 	WorkingDir string
+	Env        []string
 }
 
 func InitTool() Tool {
@@ -51,10 +53,15 @@ func InitTool() Tool {
 	}
 	tool.WorkingDir = wd
 
+	log.Println("Loading variables to env")
+	for k, v := range tool.Variables {
+		tool.Env = append(tool.Env, k+"="+v)
+	}
+
 	return tool
 }
 
-func (tool Tool) InitRepository() {
+func (tool *Tool) InitRepository() {
 	if tool.Conf.Repository.URL == "" {
 		log.Println("No repository specified. Skipping repository initialization.")
 		return
@@ -65,13 +72,13 @@ func (tool Tool) InitRepository() {
 
 	log.Println("Cloning", repositoryName, "repository at", tool.Conf.Repository.URL)
 
-	newWorkingDirectory := filepath.Join(tool.WorkingDir, repositoryName)
-	exists, _ := pathExists(newWorkingDirectory)
+	tool.WorkingDir = filepath.Join(tool.WorkingDir, repositoryName)
+	exists, _ := pathExists(tool.WorkingDir)
+	log.Println("Workdir set at ", tool.WorkingDir)
 	if exists {
 		log.Println("Repository", repositoryName, "already exists, skipping...")
 		return
 	}
-	tool.WorkingDir = newWorkingDirectory
 
 	gitCommand := exec.Command("git", "clone", tool.Conf.Repository.URL)
 	handleCommand(gitCommand)
@@ -79,21 +86,21 @@ func (tool Tool) InitRepository() {
 	log.Println("Cloned git repository")
 }
 
-func (tool Tool) LoadVariablesIntoEnv(env []string) {
-	log.Println("Loading variables to env")
-	for k, v := range tool.Variables {
-		env = append(env, k+"="+v)
-	}
-}
-
-func (tool Tool) ExecStages(env []string) {
+func (tool *Tool) ExecStages() {
 	for _, stageMap := range tool.Stages {
 		stage := convertMapSliceToStage(stageMap.Value.(yaml.MapSlice))
 		wd := filepath.Join(tool.WorkingDir, stage.Dir)
 		log.Print("Executing stage: ", stageMap.Key.(string), " (", wd, ")")
+		log.Println(stage.Command)
 
-		// replace variables in command
-		// exec command
+		command := exec.Command("sh", "-c", stage.Command)
+		newEnv := append(os.Environ(), tool.Env...)
+		command.Env = newEnv
+		command.Dir = wd
+
+		log.Println(tool.Env)
+
+		handleRealtimeOutputCommand(command)
 	}
 }
 
@@ -113,6 +120,17 @@ func convertMapSliceToStage(slice yaml.MapSlice) Stage {
 	}
 
 	return stage
+}
+
+func handleRealtimeOutputCommand(command *exec.Cmd) {
+	var stdoutBuf, stderrBuf bytes.Buffer
+	command.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+	command.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
+
+	err := command.Run()
+	if err != nil {
+		log.Fatal("Could not run stage")
+	}
 }
 
 func handleCommand(command *exec.Cmd) string {
